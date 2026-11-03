@@ -55,8 +55,130 @@ crawler/
 ├── .gitignore                                     # Игнорируемые файлы (target, .idea, и т.д.)
 ├── README.md                                      # Этот файл: документация проекта
 └── pom.xml                                        # Maven конфигурация: зависимости, версия Java 21
-
-
-
 ----
+
+
+
+
+
+
+
+
+
+
+
+**## 4. Схема работы приложения (Пошаговый поток данных)**
+
+****Этап 1: Инициация запроса. Пользователь отправляет HTTP GET-запрос на эндпоинт /api/crawl с параметром url.
+
+**Этап 2: Обработка контроллером. CrawlerController принимает URL, вызывает метод crawlerService.startCrawling(url) и мгновенно возвращает ответ: "Краулинг запущен. ID задачи: X".**
+
+Этап 3: Многопоточная обработка (в фоне).
+
+CrawlerService создает запись CrawlTask в БД H2 со статусом RUNNING.
+
+Задача передается в кастомный ThreadPoolExecutor (настроенный в ThreadPoolConfig).
+
+В выделенном потоке URL добавляется в ConcurrentHashMap.newKeySet() (защита от зацикливания).
+
+WebClient асинхронно загружает HTML-код страницы (с таймаутом 5 секунд).
+
+ParsingService извлекает Email и телефоны с помощью регулярных выражений и сохраняет их через JPA Repository.
+
+Извлекаются внутренние ссылки, и для каждой в пул потоков отправляется новая задача.
+
+Этап 4: Получение результатов. Пользователь отправляет GET-запрос на /api/answer. CrawlerController получает записи из БД и обрабатывает их через parallelStream(): фильтрует по типу, сортирует по дате (.reversed()), применяет пагинацию и возвращает чистый JSON (благодаря @JsonIgnore).
+
+
+
+## 5. ПОЛНАЯ ИНСТРУКЦИЯ ПО ЗАПУСКУ И ПРОВЕРКЕ (ПОШАГОВО С СКРИНШОТАМИ)
+
+### ШАГ 1: Открытие проекта в IntelliJ IDEA
+
+**Что делать:**
+1. Запустите **IntelliJ IDEA**.
+2. Нажмите **File** → **Open...** (или **Open Project**).
+3. Найдите папку с проектом (например, `D:\crawler`) и нажмите **OK**.
+4. Дождитесь завершения импорта Maven (индикатор в правом нижнем углу исчезнет).
+
+**Что вы увидите:**
+- Слева откроется панель **Project** со структурой файлов (как на скриншоте выше).
+- Внизу появится вкладка **Maven** со списком зависимостей.
+
+---
+
+### ШАГ 2: Запуск приложения
+
+**Что делать:**
+1. В панели **Project** (слева) раскройте папку:  
+   `src/main/java/com.example.crawler`
+2. Найдите файл **`CrawlerApplication.java`** (главный класс).
+3. Откройте его двойным кликом.
+4. Слева от строки `public class CrawlerApplication` нажмите на **зеленую кнопку Play (▶)**.
+5. Выберите **Run 'CrawlerApplication'**.
+
+**ОЖИДАЕМЫЙ РЕЗУЛЬТАТ В КОНСОЛИ (вкладка Run внизу):**
+```text
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.x.x)
+
+2026-11-02T...  INFO  ... --- [main] c.e.c.CrawlerApplication   : Starting CrawlerApplication using Java 21.x.x
+2026-11-02T...  INFO  ... --- [main] c.e.c.CrawlerApplication   : No active profile set, falling back to 1 default profile: "default"
+2026-11-02T...  INFO  ... --- [main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories...
+2026-11-02T...  INFO  ... --- [main] o.s.b.w.embedded.tomcat.TomcatWebServer : Tomcat started on port 8080 (http)
+2026-11-02T...  INFO  ... --- [main] c.e.c.CrawlerApplication   : Started CrawlerApplication in 5.123 seconds
+
+[2026-11-02T...] [SCHEDULED] Краулер активен. Проверка состояния системы...
+
+ШАГ 3: Запуск краулинга (Гарантированный сценарий)
+
+Чтобы не зависеть от внешних сайтов, используйте встроенную тестовую страницу.
+
+Откройте в браузере ссылку:
+
+http://localhost:8080/api/crawl?url=http://localhost:8080/api/test-page
+
+Ожидаемый результат в браузере:
+
+Краулинг запущен. ID задачи: 1
+
+ШАГ 4: Проверка результатов
+
+Подождите 3-5 секунд, чтобы фоновые потоки завершили работу.
+
+Откройте в браузере новую вкладку:
+
+http://localhost:8080/api/answer
+
+Ожидаемый результат (JSON):
+
+[
+  {
+    "id": 4,
+    "sourceUrl": "http://localhost:8080/api/test-page",
+    "contactType": "PHONE",
+    "contactValue": "+79991234567",
+    "foundAt": "2026-11-02T17:54:54.748"
+  },
+  {
+    "id": 1,
+    "sourceUrl": "http://localhost:8080/api/test-page",
+    "contactType": "EMAIL",
+    "contactValue": "info@netology-test.ru",
+    "foundAt": "2026-11-02T17:54:54.743"
+  }
+]
+
+ШАГ 5: Проверка фильтрации (parallelStream)
+
+Откройте в браузере ссылку с параметром фильтрации:
+
+http://localhost:8080/api/answer?type=EMAIL&page=0&size=10
+
+Ожидаемый результат: В JSON останутся только записи с "contactType": "EMAIL".
 
