@@ -56,10 +56,6 @@ crawler/
 ├── README.md                                      # Этот файл: документация проекта
 └── pom.xml                                        # Maven конфигурация: зависимости, версия Java 21
 
-
-
-
-
 ---
 
 ## 4. Схема работы приложения
@@ -108,3 +104,39 @@ crawler/
 
 ... Started CrawlerApplication in 5.123 seconds
 [2026-11-02T...] [SCHEDULED] Краулер активен. Проверка состояния системы...
+
+
+ШАГ 3: Запуск краулинга (Гарантированный сценарий)
+Чтобы не зависеть от внешних сайтов, используйте встроенную тестовую страницу.
+Откройте в браузере ссылку:
+http://localhost:8080/api/crawl?url=http://localhost:8080/api/test-page
+Ожидаемый результат в браузере:
+Краулинг запущен. ID задачи: 1
+ШАГ 4: Проверка результатов
+Подождите 3-5 секунд, чтобы фоновые потоки завершили работу.
+Откройте в браузере новую вкладку:
+ http://localhost:8080/api/answer
+Ожидаемый результат (JSON):
+
+[
+  {
+    "id": 4,
+    "sourceUrl": "http://localhost:8080/api/test-page",
+    "contactType": "PHONE",
+    "contactValue": "+79991234567",
+    "foundAt": "2026-11-02T17:54:54.748"
+  },
+  {
+    "id": 1,
+    "sourceUrl": "http://localhost:8080/api/test-page",
+    "contactType": "EMAIL",
+    "contactValue": "info@netology-test.ru",
+    "foundAt": "2026-11-02T17:54:54.743"
+  }
+]
+
+ШАГ 5: Проверка фильтрации (parallelStream)
+Откройте в браузере ссылку с параметром фильтрации: 
+http://localhost:8080/api/answer?type=EMAIL&page=0&size=10
+Ожидаемый результат:
+В JSON останутся только записи с "contactType": "EMAIL".
